@@ -1,0 +1,32 @@
+# Install: copy the distribution to /opt/j-redis, create the user (useradd --system jredis),
+# copy conf/j-redis.conf to /etc/j-redis/j-redis.conf (set requirepass), then
+#   cp systemd/j-redis.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now j-redis
+[Unit]
+Description=j-redis-service
+After=network.target
+
+[Service]
+User=jredis
+# creates /var/lib/j-redis (data) and /var/log/j-redis (GC log, heap dumps) owned by User
+StateDirectory=j-redis
+LogsDirectory=j-redis
+ExecStart=/usr/bin/taskset -c 0-1 /usr/lib/jvm/java-8/bin/java \
+    -server -Xms8g -Xmx8g \
+    -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:G1HeapRegionSize=16m \
+    -XX:+AlwaysPreTouch -XX:+ParallelRefProcEnabled \
+    -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/var/log/j-redis \
+    -Xloggc:/var/log/j-redis/gc.log -XX:+PrintGCDetails -XX:+PrintGCDateStamps \
+    -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=5 -XX:GCLogFileSize=20M \
+    -Djava.net.preferIPv4Stack=true -Dio.netty.leakDetection.level=disabled \
+    -jar /opt/j-redis/lib/j-redis-server.jar /etc/j-redis/j-redis.conf
+# exit 4 (fail-stop) restarts; 1 (config), 2 (data dir locked), 3 (data not loadable) need a human
+Restart=on-failure
+# the JVM exits with 143 after a SIGTERM-initiated clean shutdown
+SuccessExitStatus=143
+RestartSec=2
+RestartPreventExitStatus=1 2 3
+LimitNOFILE=65536
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
